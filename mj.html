@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EduStream Extreme - Direct Load</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        :root { --accent: #00f2fe; --bg: #0a0b10; --card: #161b22; }
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', sans-serif; }
+        body { background: var(--bg); color: #fff; }
+        
+        header { padding: 20px; text-align: center; background: rgba(13, 17, 23, 0.8); backdrop-filter: blur(10px); sticky; top: 0; z-index: 100; border-bottom: 1px solid #30363d; }
+        .nav { display: flex; justify-content: center; gap: 10px; margin-top: 15px; }
+        .nav-btn { padding: 10px 25px; border: none; border-radius: 8px; background: #21262d; color: #fff; cursor: pointer; font-weight: 600; transition: 0.3s; }
+        .nav-btn.active { background: var(--accent); color: #000; box-shadow: 0 0 15px var(--accent); }
+
+        main { padding: 15px; max-width: 1200px; margin: auto; }
+        .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; }
+        @media (min-width: 768px) { .grid { grid-template-columns: repeat(4, 1fr); } }
+
+        .card { background: var(--card); border-radius: 12px; overflow: hidden; border: 1px solid #30363d; cursor: pointer; transition: 0.3s; position: relative; }
+        .card:hover { transform: translateY(-5px); border-color: var(--accent); }
+        .thumb { width: 100%; aspect-ratio: 16/9; position: relative; background: #000; }
+        .thumb img { width: 100%; height: 100%; object-fit: cover; }
+        .play-overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.3); font-size: 35px; color: var(--accent); }
+        
+        .info { padding: 12px; }
+        .info h4 { font-size: 14px; margin-bottom: 8px; height: 38px; overflow: hidden; color: #e6edf3; }
+        .tag { font-size: 10px; background: #238636; color: #fff; padding: 2px 8px; border-radius: 4px; }
+
+        /* Fullscreen Player */
+        .modal { position: fixed; inset: 0; background: #000; z-index: 1000; display: none; flex-direction: column; }
+        .modal-bar { padding: 15px; background: #161b22; display: flex; justify-content: space-between; align-items: center; }
+        video { width: 100%; flex: 1; outline: none; }
+        #loader { text-align: center; padding: 50px; color: var(--accent); font-size: 18px; }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1 style="color: var(--accent); letter-spacing: 1px;">EduStream Pro</h1>
+    <div class="nav">
+        <button class="nav-btn active" id="btn-JEE" onclick="loadBatch('JEE')">JEE</button>
+        <button class="nav-btn" id="btn-NEET" onclick="loadBatch('NEET')">NEET</button>
+    </div>
+</header>
+
+<main>
+    <div id="loader"><i class="fas fa-bolt fa-spin"></i> Bypassing Servers...</div>
+    <div id="grid" class="grid"></div>
+</main>
+
+<div id="videoModal" class="modal">
+    <div class="modal-bar">
+        <span id="v-title" style="font-size: 14px; color: var(--accent);">Loading...</span>
+        <button onclick="closePlayer()" style="background:#da3633; color:white; border:none; padding:8px 16px; border-radius:6px; font-weight:bold; cursor:pointer;">✕ CLOSE</button>
+    </div>
+    <video id="mainPlayer" controls playsinline preload="auto"></video>
+</div>
+
+<script>
+    const CONFIG = {
+        JEE: "https://apiserver-jwex.onrender.com/api/missionjeet/all-content/151",
+        NEET: "https://apiserver-jwex.onrender.com/api/missionjeet/all-content/152"
+    };
+
+    const PROXY = "https://api.allorigins.win/raw?url=";
+
+    async function loadBatch(type) {
+        document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+        document.getElementById(`btn-${type}`).classList.add('active');
+        
+        const grid = document.getElementById('grid');
+        const loader = document.getElementById('loader');
+        grid.innerHTML = '';
+        loader.style.display = 'block';
+
+        try {
+            const res = await fetch(PROXY + encodeURIComponent(CONFIG[type] + "?nocache=" + Date.now()));
+            const result = await res.json();
+            
+            // Filtering Files only
+            const lectures = result.data.filter(i => i.type === 'file');
+
+            grid.innerHTML = lectures.map(lec => {
+                let videoUrl = lec.data.file_url; // Default m3u8
+                let isDirect = false;
+
+                // Extraction logic from your JSON structure
+                if (lec.data.download_urls) {
+                    try {
+                        const downloads = JSON.parse(lec.data.download_urls);
+                        // Priority: 720p > 480p > First Available
+                        const bestQuality = downloads.find(d => d.title.includes("720p")) || 
+                                           downloads.find(d => d.title.includes("480p")) || 
+                                           downloads[0];
+                        
+                        if(bestQuality) {
+                            videoUrl = bestQuality.url;
+                            isDirect = true;
+                        }
+                    } catch(e) { console.error("JSON Error"); }
+                }
+
+                return `
+                    <div class="card" onclick="playVideo('${videoUrl}', '${lec.title.replace(/'/g, "")}')">
+                        <div class="thumb">
+                            <img src="${lec.data.thumbnail}" loading="lazy">
+                            <div class="play-overlay"><i class="fas fa-play-circle"></i></div>
+                        </div>
+                        <div class="info">
+                            <h4>${lec.title}</h4>
+                            <span class="tag">${isDirect ? 'FAST MP4' : 'HLS'}</span>
+                            <span style="font-size:11px; margin-left:10px; color:#8b949e;">
+                                <i class="fas fa-clock"></i> ${Math.floor(lec.data.duration/60)}m
+                            </span>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+            loader.style.display = 'none';
+        } catch (err) {
+            loader.innerHTML = "Server Busy. Refreshing...";
+            setTimeout(() => loadBatch(type), 3000);
+        }
+    }
+
+    function playVideo(url, title) {
+        const modal = document.getElementById('videoModal');
+        const video = document.getElementById('mainPlayer');
+        document.getElementById('v-title').innerText = title;
+        modal.style.display = 'flex';
+        
+        // Setting direct source
+        video.src = url;
+        video.load();
+        video.play().catch(e => console.log("Auto-play blocked"));
+    }
+
+    function closePlayer() {
+        const modal = document.getElementById('videoModal');
+        const video = document.getElementById('mainPlayer');
+        modal.style.display = 'none';
+        video.pause();
+        video.src = "";
+    }
+
+    // Initial Load
+    loadBatch('JEE');
+</script>
+</body>
+</html>
